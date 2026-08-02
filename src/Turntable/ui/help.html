@@ -1,0 +1,81 @@
+<!doctype html>
+<!-- Copyright 2026 Sam Madwar. Licensed under Apache License 2.0. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Turntable Controller — Quick Guide</title>
+  <style>
+    :root{color-scheme:light dark;--bg:#f4f4f3;--panel:#fff;--text:#171717;--muted:#6d6d6d;--line:#d8d8d6;--accent:#2c76c7}
+    @media(prefers-color-scheme:dark){:root{--bg:#282828;--panel:#323232;--text:#f0f0f0;--muted:#aaa;--line:#4a4a4a}}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:12px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    main{padding:13px 13px 54px}h1{margin:0 0 7px;font-size:17px}h2{margin:18px 0 6px;font-size:14px}h3{margin:14px 0 4px;font-size:12px}p{margin:5px 0;color:var(--muted)}
+    .intro{padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}.intro strong,strong,code{color:var(--text)}
+    .facts{display:grid;grid-template-columns:110px minmax(0,1fr);gap:5px 10px;padding:9px;border:1px solid var(--line);border-radius:7px;background:var(--panel)}
+    .facts span:nth-child(odd){color:var(--muted)}ul,ol{margin:5px 0;padding-left:20px;color:var(--muted)}li{margin:3px 0}
+    .tip{margin-top:9px;padding:8px 10px;border-left:3px solid var(--accent);background:var(--panel);color:var(--muted)}
+    footer{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:center;padding:7px 12px;border-top:1px solid var(--line);background:var(--panel);color:var(--muted)}
+    button{border:1px solid var(--line);border-radius:5px;padding:5px 10px;background:var(--panel);color:inherit;font:inherit}button:hover{border-color:var(--accent)}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>What is Turntable Controller?</h1>
+    <div class="intro">
+      <p><strong>Turntable Controller gives a stage revolve named positions, realistic timing and direct rehearsal controls inside SketchUp.</strong></p>
+      <p>Drag to explore the set, store useful views as pegs, or run a timed change while, for example, listening to rehearsal audio. Pegs and motion settings travel inside the saved model.</p>
+    </div>
+
+    <h2>One-minute setup</h2>
+    <ol>
+      <li>Select the complete revolve group or component.</li>
+      <li>In Entity Info, enter <code>#Turntable#</code> in the field labelled <strong>Instance</strong> or <strong>Name</strong>, depending on SketchUp version. You can also rename the group directly in Outliner.</li>
+      <li>Open <strong>Extensions → Turntable</strong>.</li>
+      <li>Drag the rotation slider or enter an exact angle.</li>
+      <li>Press <strong>+</strong> to store the current angle as a named peg. The suggested number prefix keeps cues in creation order; keep it, extend it or delete it.</li>
+      <li>Save the SketchUp model to retain its Turntable data on disk.</li>
+    </ol>
+
+    <h2>Main controls</h2>
+    <div class="facts">
+      <span>Snap</span><strong>Magnetically captures a peg within four screen pixels while dragging.</strong>
+      <span>Transitions</span><strong>Animates moves instead of jumping directly.</strong>
+      <span>× multiplier</span><strong>Runs a preview 1×, 2× or 4× faster.</strong>
+      <span>Speed 360°</span><strong>Seconds required for one complete revolution.</strong>
+      <span>Motion curve</span><strong>Blends constant-speed linear movement into full acceleration and deceleration.</strong>
+      <span>Long way</span><strong>Uses the longer route to the requested angle.</strong>
+    </div>
+
+    <h2>Pegs</h2>
+    <ul>
+      <li><strong>Click a peg:</strong> move to its stored angle.</li>
+      <li><strong>Double-click its marker:</strong> jump immediately, bypassing the transition.</li>
+      <li><strong>Double-click or right-click its name:</strong> rename it.</li>
+      <li><strong>Right-click its marker:</strong> change its stored angle.</li>
+      <li><strong>− then a peg:</strong> delete that peg after confirmation.</li>
+      <li><strong>Blank name:</strong> displays the automatic fallback name <code>Peg #</code>.</li>
+    </ul>
+
+    <h2>Angles and direction</h2>
+    <p>The working scale is centred on the front: it runs from 180° through 270°, 0° and 90° to 180°. Tick marks occur every 15°, with stronger marks at 45° and 90° intervals.</p>
+    <p>Without <strong>Long way</strong>, a transition normally takes the shortest route. <strong>Option-click on Mac or Alt-click on Windows</strong> also requests the longer route.</p>
+
+    <h2>Window size</h2>
+    <p>Turntable opens at a compact size intended to align with a narrow SketchUp palette on Mac. The window is freely resizable: make it wider for finer slider control and more separation between closely spaced pegs. Turntable remembers the most recently used size.</p>
+
+    <h2>Keyboard use</h2>
+    <ul>
+      <li>Click a number field and use the cursor up/down keys for precise adjustment.</li>
+      <li>Press Return in the degree field to move to the entered angle.</li>
+      <li>Dialog editors open with their text selected so typing replaces the existing value.</li>
+    </ul>
+
+    <h2>Saved with each model</h2>
+    <p>Peg names, peg angles, current angle, rotation speed and motion curve are stored as inconspicuous attributes on the controlled <code>#Turntable#</code> entity. No sidecar file is created.</p>
+    <p>Different open models keep separate Turntable data. Opening, activating or restoring a model reloads its own settings.</p>
+    <div class="tip"><strong>If the controller cannot find the revolve:</strong> select the complete group and check that its Instance or Name value is exactly <code>#Turntable#</code>.</div>
+  </main>
+  <footer><span>Turntable Controller 1.0 · Quick Guide</span><button id="close">Close</button></footer>
+  <script>document.getElementById('close').addEventListener('click',function(){window.close()});</script>
+</body>
+</html>

@@ -1,0 +1,467 @@
+<!doctype html>
+<!-- Copyright 2026 Sam Madwar. Licensed under Apache License 2.0. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+:root{
+  --bottom-dy: -18px;
+  --ruler-dy: -4px;
+  --notches-dy: -8px;
+  --slider-dy: -11px;
+  --peg-bar-dy: 5px;
+  --peg-deg-dy: 8px;
+  --peg-name-dy: -2px; --range-inset:6px; --pad:8px; --accent:#5f91c5; --muted:#666; --track:#dedede; }
+html,body{ height:100%; }
+body{ font:11px -apple-system, Segoe UI, Roboto, sans-serif; margin:var(--pad); color:#222; }
+.small{ font-size:10.5px; opacity:.9; }
+input,select,button{ font:inherit; }
+label{ user-select:none; }
+.num{ width:5ch; }
+
+/* Header */
+.headgrid{ display:flex; align-items:center; gap:7px; margin-bottom:0; }
+.hgroup{ display:flex; align-items:center; gap:2px; white-space:nowrap; }
+.hgroup .num{ width:5ch; }
+#speed{ width:4ch; -webkit-appearance:none; appearance:textfield; }
+#speed::-webkit-inner-spin-button,#speed::-webkit-outer-spin-button{ -webkit-appearance:none; margin:0; }
+.checkLabel{ display:inline-flex; align-items:center; gap:2px; white-space:nowrap; line-height:1; }
+.checkLabel input[type=checkbox]{ margin:0; flex:none; }
+#transLbl{ transform:none; }
+#transLbl input[type=checkbox]{ transform:scale(.84); margin-left:-1px; margin-right:-1px; }
+.minorOption{ color:#555; font-size:8.5px; gap:0; }
+.minorOption input[type=checkbox]{ transform:scale(.68); margin-left:-2px; margin-right:-2px; }
+.snapOption{ flex:none; }
+.hgroup select,.hgroup input.num{ box-sizing:border-box; height:19px; vertical-align:middle; }
+.easegroup{ margin-left:auto; gap:0; }
+.easeIcon{ display:inline-flex; width:17px; height:14px; align-items:center; justify-content:center; color:#555; }
+.easeIcon svg{ display:block; width:17px; height:14px; overflow:visible; }
+.easeIcon path{ fill:none; stroke:currentColor; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
+.easeSlider{ width:34px !important; }
+.easeSlider::-webkit-slider-runnable-track{ height:2px !important; border:0 !important; border-radius:1px !important; background:#aaa !important; }
+.easeSlider::-webkit-slider-thumb{ width:9px !important; height:9px !important; margin-top:-3.5px !important; border-radius:50% !important; background:#6d9dcd !important; border:1px solid #4779ac !important; }
+
+/* Original concept: tools/value at left, peg and rotation scales at right. */
+.layout{ display:grid; grid-template-columns:54px minmax(0,1fr); grid-template-rows:40px 48px 20px; column-gap:6px; row-gap:0; }
+
+/* +/- circles */
+.vcontrols{ grid-column:1; grid-row:1; display:flex; flex-direction:row; gap:4px; align-items:center; justify-content:center; padding-top:5px; }
+.circle{ box-sizing:border-box; width:16px; height:16px; border-radius:50%; border:1px solid #555; display:flex; align-items:center; justify-content:center; cursor:pointer; background:#fafafa; font-size:12px; line-height:14px; font-weight:600; }
+.circle.active{ background:#fdecea; border-color:#c0392b; color:#902c21; }
+
+/* Peg guide */
+.topbar{ grid-column:2; grid-row:1; position:relative; height:40px; }
+.topbaseline{ position:absolute; left:0; right:0; top:26px; height:1px; background:#c8c8c8; }
+.topruler{ position:absolute; left:var(--range-inset); right:var(--range-inset); top:26px; height:14px; pointer-events:none; }
+#pegRow{ position:absolute; left:var(--range-inset); right:var(--range-inset); top:0; bottom:0; }
+.trtick{ position:absolute; width:1px; background:#aaa; height:5px; top:-2px; }
+.trtick.medium{ height:8px; top:-3px; background:#888; }
+.trtick.major{ height:12px; top:-5px; background:#666; }
+.pegBubble{ position:absolute; transform:translateX(-50%); top:22px; cursor:pointer; z-index:2; }
+.pegBubble .cap{ box-sizing:border-box; width:12px; height:9px; border:1px solid #707070; border-radius:5px; background:#d7d7d7; }
+.pegBubble .ptr{ display:none; }
+.pegName{ position:absolute; top:8px; transform:translateX(-50%); font-size:9.5px; color:#222; white-space:nowrap; cursor:text; }
+.pegDeg{ position:absolute; top:31px; transform:translateX(-50%); font-size:9px; color:#444; white-space:nowrap; pointer-events:none; z-index:3; }
+
+/* Temporary editor shown only while naming, renaming, or changing a peg. */
+.editorShade{ position:fixed; inset:0; background:rgba(0,0,0,.12); display:none; align-items:center; justify-content:center; z-index:1000; }
+.editorShade.open{ display:flex; }
+.editorBox{ background:#f7f7f7; border:1px solid #999; border-radius:6px; padding:10px; box-shadow:0 5px 20px rgba(0,0,0,.25); min-width:230px; }
+.editorTitle{ margin-bottom:7px; }
+.editorInput{ box-sizing:border-box; width:100%; }
+.editorButtons{ display:flex; justify-content:flex-end; gap:7px; margin-top:9px; }
+
+/* Active rotation scale */
+.angleCell{ grid-column:1; grid-row:2; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:3px; padding-top:5px; }
+.longwaySmall{ width:58px; justify-content:center; gap:2px; font-size:8.5px; white-space:nowrap; }
+.current{ grid-column:2; grid-row:2; position:relative; height:48px; }
+.track{ position:absolute; left:0; right:0; top:5px; height:8px; }
+input[type=range]{ -webkit-appearance:none; width:100%; margin:0; background:transparent; }
+input[type=range]::-webkit-slider-runnable-track{ height:5px; background:var(--track); border-radius:3px; border:1px solid #cfcfcf; }
+input[type=range]::-moz-range-track{ height:5px; background:var(--track); border-radius:3px; border:1px solid #cfcfcf; }
+input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:12px; height:12px; border-radius:4px; background:var(--accent); border:1px solid #4779ac; margin-top:-4px; }
+input[type=range]::-moz-range-thumb{ width:12px; height:12px; border-radius:4px; background:var(--accent); border:1px solid #4779ac; }
+/* Notches higher by +2px */
+.onbar{ position:absolute; left:var(--range-inset); right:var(--range-inset); top:10px; height:8px; pointer-events:none; transform: translateY(var(--notches-dy)); }
+.notch{ position:absolute; width:2px; height:10px; background:var(--accent); transform:translateX(-50%); }
+/* Ruler snug under slider (raised ~9px relative to prior) */
+.ruler{ position:absolute; left:var(--range-inset); right:var(--range-inset); top:20px; height:16px; pointer-events:none; transform: translateY(var(--ruler-dy)); }
+.rtick{ position:absolute; width:1px; background:#777; height:12px; top:0; }
+.rtick.medium{ height:9px; top:0; opacity:.85; }
+.rtick.minor{ height:5px; top:0; opacity:.65; }
+.rlabel{ position:absolute; transform:translateX(-50%); top:12px; font-size:8.5px; color:#666; white-space:nowrap; }
+
+/* Permanent one-line description, as in the original concept. */
+.bottomrow{ grid-column:1 / span 2; grid-row:3; display:flex; align-items:center; gap:6px; margin:0; transform:none; color:#777; font-size:8.5px; }
+.usageText{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.anglewrap{ position:relative; display:inline-block; }
+.anglewrap input{ box-sizing:border-box; width:56px; padding:2px 15px 2px 4px; -webkit-appearance:none; appearance:textfield; }
+.anglewrap input::-webkit-inner-spin-button,.anglewrap input::-webkit-outer-spin-button{ -webkit-appearance:none; margin:0; }
+.anglewrap::after{ content:'\00B0'; position:absolute; right:4px; top:50%; transform:translateY(-50%); color:#444; font-size:12px; pointer-events:none; }
+.help{ margin-left:auto; cursor:pointer; font-weight:bold; color:#555; }
+</style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="headgrid small">
+    <label class="checkLabel minorOption snapOption" title="Magnetically snap within 4 pixels of a peg"><input id="snap" type="checkbox" checked><span>Snap</span></label>
+    <div class="hgroup">
+      <label id="transLbl" class="checkLabel"><input id="modeAnimate" type="checkbox" checked><span>Transitions ×</span></label>
+      <select id="mult"><option>1</option><option>2</option><option>4</option></select>
+    </div>
+    <div class="hgroup">Speed 360°=<input id="speed" class="num" type="number" min="1" step="1" value="60">sec</div>
+    <div class="hgroup easegroup" title="Motion curve: linear to full acceleration/deceleration">
+      <span class="easeIcon" aria-label="Linear motion"><svg viewBox="0 0 20 16" aria-hidden="true"><path d="M2 14 L18 2"/></svg></span>
+      <input id="easing" class="easeSlider" type="range" min="0" max="1" step="0.05" value="1">
+      <span class="easeIcon" aria-label="Acceleration and deceleration"><svg viewBox="0 0 20 16" aria-hidden="true"><path d="M2 14 C7 14 7 2 18 2"/></svg></span>
+    </div>
+  </div>
+
+  <div class="layout small">
+    <div class="vcontrols">
+      <div id="btnDel" class="circle" title="Delete peg">−</div>
+      <div id="btnAdd" class="circle" title="Add peg">+</div>
+    </div>
+
+    <div class="topbar">
+      <div class="topbaseline"></div>
+      <div id="topruler" class="topruler"></div>
+      <div id="pegRow"></div>
+    </div>
+
+    <div class="angleCell">
+      <span class="anglewrap"><input id="targetAbs" type="number" min="0" max="359" step="1" value="0"></span>
+      <label class="checkLabel minorOption longwaySmall"><input id="longway" type="checkbox"><span>Long way</span></label>
+    </div>
+
+    <div class="current">
+      <div class="track">
+        <div id="onbar" class="onbar"></div>
+        <input id="slider" type="range" min="-180" max="180" step="1" value="0">
+        <div id="ruler" class="ruler"></div>
+      </div>
+    </div>
+
+    <div class="bottomrow">
+      <span class="usageText">Usage: Controls Z-rotation of a group called “#Turntable#”.</span>
+      <span id="hint" style="display:none; color:#7a3dbb;">Select peg to delete…</span>
+      <span id="help" class="help" title="Open Quick Guide">?</span>
+    </div>
+  </div>
+
+  <div id="editorShade" class="editorShade">
+    <div class="editorBox" role="dialog" aria-modal="true">
+      <div id="editorTitle" class="editorTitle"></div>
+      <input id="editorInput" class="editorInput">
+      <div class="editorButtons"><button id="editorCancel">Cancel</button><button id="editorOK">OK</button></div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  var slider   = document.getElementById('slider');
+  var target   = document.getElementById('targetAbs');
+  var speed    = document.getElementById('speed');
+  var mult     = document.getElementById('mult');
+  var longw    = document.getElementById('longway');
+  var modeA    = document.getElementById('modeAnimate');
+  var snap     = document.getElementById('snap');
+  var easing   = document.getElementById('easing');
+
+  var rulerBox = document.getElementById('ruler');
+  var onbar    = document.getElementById('onbar');
+  var topR     = document.getElementById('topruler');
+  var pegRow   = document.getElementById('pegRow');
+  var addBtn   = document.getElementById('btnAdd');
+  var delBtn   = document.getElementById('btnDel');
+  var hint     = document.getElementById('hint');
+  var editorShade = document.getElementById('editorShade');
+  var editorTitle = document.getElementById('editorTitle');
+  var editorInput = document.getElementById('editorInput');
+  var editorOK = document.getElementById('editorOK');
+  var editorCancel = document.getElementById('editorCancel');
+
+  var pegs = [];
+  var clickTimers = new Map();
+  var deleteMode = false;
+  var editorCommit = null;
+
+  function callRuby(name, arg){
+    arg = (arg == null) ? '' : String(arg);
+    if(window.sketchup && typeof window.sketchup[name] === 'function'){
+      window.sketchup[name](arg);
+    } else {
+      window.location = 'skp:' + name + '@' + encodeURIComponent(arg);
+    }
+  }
+
+  function openEditor(titleText, value, type, onCommit, selectAll){
+    editorTitle.textContent = titleText;
+    editorInput.type = type || 'text';
+    editorInput.value = value == null ? '' : value;
+    editorCommit = onCommit;
+    editorShade.classList.add('open');
+    setTimeout(function(){
+      editorInput.focus();
+      if(selectAll===false){
+        var end=editorInput.value.length;
+        try{ editorInput.setSelectionRange(end,end); }catch(e){}
+      } else {
+        editorInput.select();
+      }
+    }, 0);
+  }
+  function closeEditor(){ editorShade.classList.remove('open'); editorCommit = null; }
+  function acceptEditor(){ var fn=editorCommit, value=editorInput.value; closeEditor(); if(fn) fn(value); }
+  editorOK.addEventListener('click', acceptEditor);
+  editorCancel.addEventListener('click', closeEditor);
+  editorInput.addEventListener('keydown', function(e){ if(e.key==='Enter') acceptEditor(); else if(e.key==='Escape') closeEditor(); });
+  editorShade.addEventListener('mousedown', function(e){ if(e.target===editorShade) closeEditor(); });
+
+  function clampAbs(a){ a = parseFloat(a)||0; while(a<0)a+=360; while(a>=360)a-=360; return Math.round(a); }
+  function absToCentered(a){ a=clampAbs(a); var c = a; if(c>180) c = c-360; return c; }
+  function centeredToAbs(c){ c = parseFloat(c)||0; c = Math.max(-180, Math.min(180, c)); var a = c<0? 360+c : c; return clampAbs(a); }
+  function setSliderFromAbs(a){ slider.value = absToCentered(a); }
+  function setAbsFromSlider(){ target.value = centeredToAbs(slider.value); }
+  function pctFromCentered(c){ return ( (c + 180) / 360 ) * 100; }
+  function pctFromAbs(a){ return pctFromCentered(absToCentered(a)); }
+
+  function renderTopGuide(){
+    topR.innerHTML='';
+    for(var c=-180; c<=180; c+=15){
+      var x=pctFromCentered(c), t=document.createElement('div');
+      t.className='trtick';
+      if(c%90===0) t.classList.add('major');
+      else if(Math.abs(c)%45===0) t.classList.add('medium');
+      t.style.left=x+'%'; topR.appendChild(t);
+    }
+  }
+  function renderRuler(){
+    rulerBox.innerHTML='';
+    for(var c=-180; c<=180; c+=15){
+      var x=pctFromCentered(c);
+      var t=document.createElement('div'); t.className='rtick';
+      if(c%90===0){} else if(Math.abs(c)%45===0){ t.classList.add('medium'); } else { t.classList.add('minor'); }
+      t.style.left=x+'%'; rulerBox.appendChild(t);
+      if(c%30===0){ var lab=document.createElement('div'); lab.className='rlabel'; lab.style.left=x+'%'; lab.textContent=(c<0?(360+c):c); rulerBox.appendChild(lab); }
+    }
+  }
+  function renderOnBarNotches(){
+    onbar.innerHTML='';
+    pegs.forEach(function(p){ var n=document.createElement('div'); n.className='notch'; n.style.left=pctFromAbs(p.deg)+'%'; onbar.appendChild(n); });
+  }
+
+  function utf8ToBase64(text){ return btoa(unescape(encodeURIComponent(text))); }
+  function savePegs(){ callRuby('pegs_set', utf8ToBase64(JSON.stringify(pegs))); }
+  window.samTurntableSaveResult=function(ok, messageB64){
+    var message='';
+    try{ message=decodeURIComponent(escape(atob(messageB64))); }catch(e){}
+    if(!ok){
+      hint.textContent=message || 'Peg save failed.';
+      hint.style.display='inline';
+    } else if(!deleteMode){
+      hint.textContent='Saved in model'; hint.style.display='inline';
+      clearTimeout(window.__saveNotice);
+      window.__saveNotice=setTimeout(function(){ if(!deleteMode) hint.style.display='none'; }, 1000);
+    }
+  };
+  window.samTurntableLoadResult=function(found, count){
+    if(!found){
+      hint.textContent='No #Turntable# group found';
+      hint.style.display='inline';
+    } else if(!deleteMode && hint.textContent==='No #Turntable# group found'){
+      hint.style.display='none';
+    }
+  };
+  function editPegDegrees(p){
+    openEditor('Set degrees for "'+(p.name||'Peg')+'":', p.deg, 'number', function(v){
+      var a = parseInt(v,10); if(isNaN(a)) return;
+      p.deg = ((a%360)+360)%360;
+      savePegs(); renderPegs(); renderOnBarNotches();
+    });
+  }
+  function renamePeg(p){
+    openEditor('Rename peg:', p.name||'', 'text', function(v){
+      p.name = v;
+      savePegs(); renderPegs(); renderOnBarNotches();
+    });
+  }
+  function renderPegs(){
+    pegRow.innerHTML='';
+    pegs.sort(function(a,b){return a.deg-b.deg;});
+    pegs.forEach(function(p, idx){
+      var pct = pctFromAbs(p.deg);
+      var bub=document.createElement('div'); bub.className='pegBubble'; bub.style.left=pct+'%';
+      var cap=document.createElement('div'); cap.className='cap'; bub.appendChild(cap);
+      var ptr=document.createElement('div'); ptr.className='ptr'; bub.appendChild(ptr);
+      var nm=document.createElement('div'); nm.className='pegName'; nm.style.left=pct+'%'; nm.textContent=(p.name||('Peg '+(idx+1)));
+      var dg=document.createElement('div'); dg.className='pegDeg';  dg.style.left=pct+'%'; dg.textContent=p.deg+'°';
+
+      bub.title = nm.textContent+' @ '+p.deg+'°';
+
+      bub.addEventListener('click', function(ev){
+        if(ev.detail > 1) return;
+        if(deleteMode){
+          if(confirm('Delete peg "'+nm.textContent+'" @ '+p.deg+'° ?')){
+            pegs=pegs.filter(function(x){return x!==p;}); savePegs(); renderPegs(); renderOnBarNotches();
+            deleteMode=false; delBtn.classList.remove('active'); hint.style.display='none';
+          }
+          return;
+        }
+        var id=bub; if(clickTimers.has(id)) return;
+        var timer=setTimeout(function(){
+          clickTimers.delete(id);
+          // Preserve modifier overrides and also respect the visible checkbox.
+          var longOverride = ev.altKey;
+          var useLong = (longw.checked || longOverride) ? 1 : 0;
+          var anim = document.getElementById('modeAnimate').checked ? 1 : 0;
+          if(anim){
+            // Start Ruby animation
+            callRuby('go', p.deg+','+speed.value+','+useLong+','+mult.value+','+anim+','+easing.value);
+            // JS live animate mirror (no layout changes)
+            try{
+              var current = (parseFloat(target.value)||0)%360; if(current<0) current+=360;
+              var desired = (parseFloat(p.deg)||0)%360;
+              var delta = (desired - current + 360) % 360; if(delta>180) delta -= 360;
+              if(useLong){ delta += (delta>=0 ? -360 : 360); }
+              var total = Math.abs(delta);
+              var sec = Math.max(parseFloat(speed.value)||60, 0.001) / Math.max(parseFloat(mult.value)||1, 0.001);
+              var deg_per_sec = 360.0 / sec;
+              var duration = total / deg_per_sec;
+              var startT = Date.now();
+              var tick = function(){
+                var t = (Date.now()-startT)/1000.0;
+                var frac = Math.max(0, Math.min(1, t / duration));
+                var smooth = frac*frac*(3-2*frac);
+                var mix = Math.max(0, Math.min(1, parseFloat(easing.value)||0));
+                var eased = frac*(1-mix) + smooth*mix;
+                var step = current + delta * eased;
+                var a = ((Math.round(step)%360)+360)%360;
+                setSliderFromAbs(a); target.value = a;
+                if(frac>=1){ clearInterval(__liveTimer); __liveTimer=null; }
+              };
+              if(window.__liveTimer) clearInterval(window.__liveTimer);
+              window.__liveTimer = setInterval(tick, 16);
+            }catch(e){/* ignore */}
+          }
+          else{ callRuby('jump', p.deg); }
+          target.value=p.deg; setSliderFromAbs(p.deg);
+        }, 300);
+        clickTimers.set(id, timer);
+      });
+      
+      // Double-click: jump immediately (no transition)
+      bub.addEventListener('dblclick', function(e){
+        e.preventDefault(); e.stopPropagation();
+        if(e.stopImmediatePropagation) e.stopImmediatePropagation();
+        // cancel pending single-click timer if any
+        var t = clickTimers.get(bub); if(t){ clearTimeout(t); clickTimers.delete(bub); }
+        if(window.__liveTimer){ try{ clearInterval(window.__liveTimer); }catch(_){} window.__liveTimer=null; }
+        callRuby('jump', p.deg);
+        target.value=p.deg; setSliderFromAbs(p.deg);
+      }, true);
+// Right-click: edit degree
+      bub.addEventListener('contextmenu', function(e){ e.preventDefault(); editPegDegrees(p); });
+
+      // The name has its own editing surface and never triggers rotation.
+      nm.addEventListener('click', function(e){ e.stopPropagation(); });
+      nm.addEventListener('dblclick', function(e){ e.preventDefault(); e.stopPropagation(); renamePeg(p); });
+      nm.addEventListener('contextmenu', function(e){ e.preventDefault(); e.stopPropagation(); renamePeg(p); });
+
+      pegRow.appendChild(nm); pegRow.appendChild(bub); pegRow.appendChild(dg);
+
+    });
+    hint.style.display = deleteMode ? 'inline' : 'none';
+    pegRow.style.cursor = deleteMode ? 'not-allowed' : 'default';
+  }
+
+  window.sketchup = window.sketchup || {};
+  window.sketchup._pegs_b64=function(b64){
+    try{ var loaded=JSON.parse(atob(b64)); pegs=Array.isArray(loaded)?loaded:[]; }catch(e){ pegs=[]; }
+    renderTopGuide(); renderRuler(); renderPegs(); renderOnBarNotches();
+  };
+  window.sketchup._state_b64=function(b64){
+    try{var o=JSON.parse(atob(b64))||{};}catch(e){var o={};}
+    var ang=(o.angle!=null)?o.angle:0, spd=(o.speed!=null)?o.speed:60, ease=(o.easing!=null)?o.easing:1;
+    target.value=((ang%360)+360)%360; setSliderFromAbs(target.value); speed.value=spd; easing.value=ease;
+  };
+  window.sketchup_anim=function(a){ target.value=clampAbs(a); setSliderFromAbs(a); };
+  function loadPegs(){ callRuby('pegs_get'); }
+  function loadState(){ callRuby('state'); }
+  function reloadModelData(){ loadPegs(); loadState(); }
+
+  slider.addEventListener('input', function(){
+  // Keep the thumb where the user drags; ends wrap at ±180
+  // Only update the model via centered value
+  var s = parseFloat(slider.value)||0; // [-180, 180]
+  if(snap.checked && pegs.length){
+    var usable=Math.max(slider.clientWidth-12, 1), threshold=(4/usable)*360, nearest=null, distance=Infinity;
+    pegs.forEach(function(p){
+      var c=absToCentered(p.deg), options=[c];
+      if(c===180) options.push(-180);
+      options.forEach(function(candidate){ var d=Math.abs(candidate-s); if(d<distance){distance=d; nearest=candidate;} });
+    });
+    if(nearest!==null && distance<=threshold){ s=nearest; slider.value=s; }
+  }
+  // Update the numeric angle to absolute representation
+  function centeredToAbs(c){ c = parseFloat(c)||0; c = Math.max(-180, Math.min(180, c)); var a = c<0? 360+c : c; return ((a%360)+360)%360; }
+  var a = centeredToAbs(s);
+  target.value = a;
+  callRuby('scrub', s);
+});
+  target.addEventListener('focus', function(e){ e.target.select(); });
+  target.addEventListener('keydown', function(e){ if(e.key==='Enter'){ var a=((parseInt(target.value,10)%360)+360)%360; var anim=document.getElementById('modeAnimate').checked?1:0; if(anim){ callRuby('go', a+','+speed.value+','+(document.getElementById('longway').checked?1:0)+','+mult.value+','+anim+','+easing.value); } else { callRuby('jump', a); } } });
+  target.addEventListener('change', function(){ var a=((parseInt(target.value,10)%360)+360)%360; target.value=a; setSliderFromAbs(a); });
+  // JS live animate (typing) when animation enabled
+  target.addEventListener('change', function(){
+    try{
+      var anim = document.getElementById('modeAnimate').checked?1:0;
+      if(!anim) return;
+      var current = (parseFloat(target.value)||0)%360; if(current<0) current+=360;
+      var desired = current; // already set
+      var delta = (desired - current + 360) % 360; if(delta>180) delta -= 360;
+      var total = Math.abs(delta);
+      var sec = Math.max(parseFloat(speed.value)||60, 0.001) / Math.max(parseFloat(mult.value)||1, 0.001);
+      var deg_per_sec = 360.0 / sec;
+      var duration = total / deg_per_sec;
+      var startT = Date.now();
+      var tick = function(){
+        var t = (Date.now()-startT)/1000.0;
+        var frac = Math.max(0, Math.min(1, t / duration));
+        var smooth = frac*frac*(3-2*frac);
+        var mix = Math.max(0, Math.min(1, parseFloat(easing.value)||0));
+        var eased = frac*(1-mix) + smooth*mix;
+        var step = current + delta * eased;
+        var a = ((Math.round(step)%360)+360)%360;
+        setSliderFromAbs(a); target.value = a;
+        if(frac>=1){ clearInterval(__liveTimer2); __liveTimer2=null; }
+      };
+      if(window.__liveTimer2) clearInterval(window.__liveTimer2);
+      window.__liveTimer2 = setInterval(tick, 16);
+    }catch(e){}
+  });
+
+  addBtn.addEventListener('click', function(){
+    var a=((parseInt(target.value,10)%360)+360)%360;
+    var highest=pegs.length;
+    pegs.forEach(function(p){ var m=String(p.name||'').match(/^\s*(\d+)\.\s*/); if(m) highest=Math.max(highest,parseInt(m[1],10)||0); });
+    var suggested=(highest+1)+'. ';
+    openEditor('Name this peg:', suggested, 'text', function(name){
+      var finalName=String(name||'').trim() ? name : ('Peg '+(pegs.length+1));
+      pegs.push({deg:a, name:finalName}); savePegs(); renderPegs(); renderOnBarNotches();
+    }, false);
+  });
+  delBtn.addEventListener('click', function(){ deleteMode=!deleteMode; delBtn.classList.toggle('active', deleteMode); hint.style.display = deleteMode ? 'inline' : 'none'; });
+
+  function saveSize(){ callRuby('save_ui', window.innerWidth+','+window.innerHeight); }
+  window.addEventListener('resize', function(){ clearTimeout(window.__rt); window.__rt=setTimeout(saveSize,150); renderTopGuide(); renderRuler(); renderPegs(); renderOnBarNotches(); });
+  window.addEventListener('focus', function(){ clearTimeout(window.__modelRefresh); window.__modelRefresh=setTimeout(reloadModelData, 50); });
+  easing.addEventListener('change', function(){ callRuby('easing_set', easing.value); });
+  document.getElementById('help').addEventListener('click', function(){ callRuby('help'); });
+
+  reloadModelData(); renderTopGuide(); renderRuler(); renderPegs(); renderOnBarNotches();
+})();
+</script>
+</body>
+</html>
