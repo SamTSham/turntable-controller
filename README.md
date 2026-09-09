@@ -56,6 +56,8 @@ Please use GitHub Issues. Include your SketchUp version, operating system, a
 short description of what happened and, where useful, a screenshot or minimal
 model that reproduces the problem.
 
+If this free tool helps your work, you can [buy me a coffee on Ko-fi](https://ko-fi.com/samtsham). Contributions are entirely optional and help keep all three plugins free and maintained.
+
 ## Licence
 
 Freeware released under the [Apache License 2.0](LICENSE). Copyright © 2026
