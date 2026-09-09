@@ -270,8 +270,9 @@ input[type=range]::-moz-range-thumb{ width:12px; height:12px; border-radius:4px;
     if(!found){
       hint.textContent='No #Turntable# group found';
       hint.style.display='inline';
-    } else if(!deleteMode && hint.textContent==='No #Turntable# group found'){
-      hint.style.display='none';
+    } else {
+      hint.textContent='Select peg to delete…';
+      hint.style.display=deleteMode ? 'inline' : 'none';
     }
   };
   function editPegDegrees(p){
@@ -391,6 +392,22 @@ input[type=range]::-moz-range-thumb{ width:12px; height:12px; border-radius:4px;
   function loadState(){ callRuby('state'); }
   function reloadModelData(){ loadPegs(); loadState(); }
 
+  var scrubPointerActive = false;
+  function finishScrub(){
+    if(!scrubPointerActive) return;
+    scrubPointerActive = false;
+    callRuby('scrub_end');
+  }
+  slider.addEventListener('pointerdown', function(e){
+    scrubPointerActive = true;
+    try{ slider.setPointerCapture(e.pointerId); }catch(_){}
+    callRuby('scrub_begin');
+  });
+  window.addEventListener('pointerup', finishScrub, true);
+  window.addEventListener('pointercancel', finishScrub, true);
+  window.addEventListener('blur', finishScrub);
+  document.addEventListener('visibilitychange', function(){ if(document.hidden) finishScrub(); });
+  slider.addEventListener('change', finishScrub);
   slider.addEventListener('input', function(){
   // Keep the thumb where the user drags; ends wrap at ±180
   // Only update the model via centered value
