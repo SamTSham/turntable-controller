@@ -26,7 +26,7 @@ There are no sidecar files, accounts, analytics or network requirements.
 
 ## Installation
 
-1. Download `Turntable_Controller_1.0.0.rbz` from Releases.
+1. Download the [prepared 1.0.1 maintenance build](release/Turntable_Controller_1.0.1.rbz?raw=true). See its [release notes](RELEASE_NOTES.md) and [checksum](release/SHA256SUMS-1.0.1.txt).
 2. In SketchUp, open **Extension Manager**.
 3. Choose **Install Extension** and select the RBZ.
 
@@ -44,6 +44,11 @@ Confirmed in SketchUp 2026 on macOS and developed from a controller previously
 used with SketchUp 2023. It uses long-established SketchUp APIs and should work
 with other desktop versions supporting `HtmlDialog`. Reports from Windows and
 earlier SketchUp versions are welcome.
+
+The 1.0.1 maintenance build includes the current undo, read-only controller
+refresh and macOS window-closing corrections. Package integrity and Ruby syntax
+are checked; final interactive undo and close/quit checks remain to be confirmed.
+Windows runtime testing and Extension Warehouse approval are not asserted.
 
 ## Support
 
