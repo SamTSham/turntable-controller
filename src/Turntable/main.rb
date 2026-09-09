@@ -9,6 +9,11 @@ module SamTurntable
     @@dlg = nil
     @@help_dialog = nil
     @@animation_timer = nil
+    @@animation_model = nil
+    @@animation_entity = nil
+    @@scrub_model = nil
+    @@scrub_entity = nil
+    @@scrub_has_change = false
     ATTR_DICT = 'SamTurntable'.freeze
     DATA_VERSION = 1
     NAME_REGEX = /#Turntable#/i
@@ -17,12 +22,16 @@ module SamTurntable
     def self.find_target
       model = Sketchup.active_model
       return nil unless model
+      # The named revolve may live at the model root even while the user is
+      # editing another context, so active_entities would be incorrect here.
+      # rubocop:disable SketchupSuggestions/ModelEntities
       root = turntable_candidates(model.entities)
       selected = model.selection.to_a.select { |e| turntable_entity?(e) }
       direct = selected + root
       direct.find { |e| turntable_name?(e) } ||
         direct.find { |e| turntable_data?(e) } ||
         nested_turntable(model.entities)
+      # rubocop:enable SketchupSuggestions/ModelEntities
     end
 
     def self.turntable_entity?(ent)
@@ -58,18 +67,14 @@ module SamTurntable
       !!(instance_name =~ NAME_REGEX || definition_name =~ NAME_REGEX)
     end
 
-    
-def self.get_angle(ent)
-  aa = ent.get_attribute(ATTR_DICT, 'angle_deg', nil)
-  ad = derive_angle_from_transform(ent).to_f rescue 0.0
-  if aa.nil?
-    return ad
-  else
-    aa = aa.to_f
-    return ad if (aa - ad).abs >= 0.5
-    return aa
-  end
-end
+    def self.get_angle(ent)
+      stored = ent.get_attribute(ATTR_DICT, 'angle_deg', nil)
+      derived = derive_angle_from_transform(ent).to_f
+      return derived if stored.nil?
+
+      stored = stored.to_f
+      (stored - derived).abs >= 0.5 ? derived : stored
+    end
 
     def self.set_angle(ent, deg); ent.set_attribute(ATTR_DICT, 'angle_deg', deg.to_f % 360.0); end
     def self.get_speed(ent); ent.get_attribute(ATTR_DICT, 'sec_per_rev', 60.0).to_f; end
@@ -79,7 +84,8 @@ end
     def self.get_pegs(ent)
       pegs = JSON.parse(ent.get_attribute(ATTR_DICT, 'pegs', '[]').to_s)
       pegs.is_a?(Array) ? pegs : []
-    rescue JSON::ParserError, TypeError
+    rescue JSON::ParserError, TypeError => error
+      warn("Turntable Controller: invalid stored peg data: #{error.message}")
       []
     end
 
@@ -100,26 +106,47 @@ end
     def self.pivot_origin(ent); ent.bounds.center; end
     def self.pivot_axis(ent);   ent.transformation.zaxis; end
 
-    
-def self.derive_angle_from_transform(ent)
-  t = ent.transformation
-  # angle around Z relative to world x-axis (in degrees 0..360)
-  x = t.xaxis
-  ang = Math.atan2(x.y, x.x) * 180.0 / Math::PI
-  ang = ang % 360.0
-  ang < 0 ? ang + 360.0 : ang
-end
+    def self.derive_angle_from_transform(ent)
+      t = ent.transformation
+      # Angle around Z relative to the world x-axis (in degrees 0..360).
+      x = t.xaxis
+      ang = Math.atan2(x.y, x.x) * 180.0 / Math::PI
+      ang %= 360.0
+      ang < 0 ? ang + 360.0 : ang
+    end
 
-    def self.rotate_to(ent, target_deg)
+    def self.with_operation(model, name)
+      model.start_operation(name, true)
+      result = yield
+      model.commit_operation
+      result
+    rescue StandardError
+      model.abort_operation
+      raise
+    end
+
+    def self.rotate_to(ent, target_deg, operation_name = 'Rotate Turntable', settings = nil)
+      end_scrub
       cancel_animation
       current = get_angle(ent)
       delta   = (target_deg.to_f - current)
-      return if delta.abs < 1e-6
-      ent.transform!(Geom::Transformation.rotation(pivot_origin(ent), pivot_axis(ent), delta.degrees))
-      set_angle(ent, target_deg.to_f)
+      return if delta.abs < 1e-6 && !settings
+
+      model = Sketchup.active_model
+      with_operation(model, operation_name) do
+        if settings
+          set_speed(ent, settings[:speed])
+          set_easing(ent, settings[:easing])
+        end
+        if delta.abs >= 1e-6
+          ent.transform!(Geom::Transformation.rotation(pivot_origin(ent), pivot_axis(ent), delta.degrees))
+        end
+        set_angle(ent, target_deg.to_f)
+      end
     end
 
     def self.animate_to(ent, target_deg, sec_per_rev, long_way=false, multiplier=1.0, easing=1.0)
+      end_scrub
       cancel_animation
       current = get_angle(ent)
       desired = target_deg.to_f % 360.0
@@ -127,7 +154,8 @@ end
       delta -= 360.0 if delta > 180.0
       delta += (delta >= 0 ? -360.0 : 360.0) if long_way
       total = delta.abs
-      return rotate_to(ent, desired) if total < 0.1
+      settings = { speed: sec_per_rev, easing: easing }
+      return rotate_to(ent, desired, 'Move Turntable', settings) if total < 0.1
 
       sec = [sec_per_rev.to_f, 0.001].max
       sec = sec / [multiplier.to_f, 0.001].max
@@ -136,26 +164,33 @@ end
 
       start = Time.now; last = current
       origin = pivot_origin(ent); axis = pivot_axis(ent)
-      view = Sketchup.active_model.active_view
-      timer = UI.start_timer(0.01, true) do
-        t = Time.now - start
-        frac = [[t / duration, 1.0].min, 0.0].max
-        smooth = frac * frac * (3 - 2 * frac)
-        mix = [[easing.to_f, 0.0].max, 1.0].min
-        eased = frac * (1.0 - mix) + smooth * mix
-        step = current + delta * eased
-        inc = step - last
-        if inc.abs >= 1e-6
-          ent.transform!(Geom::Transformation.rotation(origin, axis, inc.degrees))
-          last = step
-          view.invalidate
-          begin; @@dlg && @@dlg.execute_script("window.sketchup_anim && window.sketchup_anim(" + step.round.to_s + ")"); rescue; end
-        end
-        if frac >= 1.0 - 1e-6
-          UI.stop_timer(timer)
-          @@animation_timer = nil if @@animation_timer == timer
-          set_angle(ent, desired)
-          begin; @@dlg && @@dlg.execute_script("window.sketchup_anim && window.sketchup_anim(" + desired.round.to_s + ")"); rescue; end
+      model = Sketchup.active_model
+      view = model.active_view
+      model.start_operation('Move Turntable', true)
+      @@animation_model = model
+      @@animation_entity = ent
+      set_speed(ent, sec_per_rev)
+      set_easing(ent, easing)
+
+      timer = nil
+      timer = UI.start_timer(0.03, true) do
+        begin
+          t = Time.now - start
+          frac = [[t / duration, 1.0].min, 0.0].max
+          smooth = frac * frac * (3 - 2 * frac)
+          mix = [[easing.to_f, 0.0].max, 1.0].min
+          eased = frac * (1.0 - mix) + smooth * mix
+          step = current + delta * eased
+          inc = step - last
+          if inc.abs >= 1e-6
+            ent.transform!(Geom::Transformation.rotation(origin, axis, inc.degrees))
+            last = step
+            view.invalidate
+            @@dlg.execute_script("window.sketchup_anim && window.sketchup_anim(#{step.round})") if @@dlg
+          end
+          finish_animation(timer, ent, desired) if frac >= 1.0 - 1e-6
+        rescue StandardError => error
+          fail_animation(timer, model, error)
         end
       end
       @@animation_timer = timer
@@ -163,10 +198,90 @@ end
 
     def self.cancel_animation
       return unless @@animation_timer
-      UI.stop_timer(@@animation_timer)
+      timer = @@animation_timer
+      UI.stop_timer(timer)
+      set_angle(@@animation_entity, derive_angle_from_transform(@@animation_entity)) if @@animation_entity
+      @@animation_model.commit_operation if @@animation_model
+      clear_animation
+    end
+
+    def self.finish_animation(timer, ent, desired)
+      UI.stop_timer(timer)
+      set_angle(ent, desired)
+      @@animation_model.commit_operation
+      clear_animation
+      @@dlg.execute_script("window.sketchup_anim && window.sketchup_anim(#{desired.round})") if @@dlg
+    end
+
+    def self.fail_animation(timer, model, error)
+      UI.stop_timer(timer) if timer
+      model.abort_operation if @@animation_model == model
+      clear_animation
+      warn("Turntable Controller animation failed: #{error.message}")
+      warn(error.backtrace.join("\n")) if error.backtrace
+      UI.messagebox("Turntable Controller could not complete the movement.\n\n#{error.message}")
+    end
+
+    def self.clear_animation
       @@animation_timer = nil
+      @@animation_model = nil
+      @@animation_entity = nil
+    end
+
+    def self.begin_scrub
+      end_scrub
+      cancel_animation
+      ent = find_target
+      return unless ent
+
+      # Never leave a SketchUp operation open between HtmlDialog callbacks.
+      # WebKit can omit pointer-up when focus changes, which would otherwise
+      # leave the model locked inside an unfinished operation.
+      @@scrub_model = Sketchup.active_model
+      @@scrub_entity = ent
+      @@scrub_has_change = false
+    end
+
+    def self.scrub_to(target_deg)
+      ent = @@scrub_entity
+      unless ent
+        ent = find_target
+        return unless ent
+        return rotate_to(ent, target_deg)
+      end
+
+      current = get_angle(ent)
+      delta = target_deg.to_f - current
+      return if delta.abs < 1e-6
+
+      operation_started = false
+      # The first movement creates the Undo entry. Later movements commit
+      # immediately as transparent operations joined to that same entry.
+      # Live scrubbing must redraw after every committed pointer update.
+      # rubocop:disable SketchupPerformance/OperationDisableUI
+      @@scrub_model.start_operation('Rotate Turntable', false, false, @@scrub_has_change)
+      # rubocop:enable SketchupPerformance/OperationDisableUI
+      operation_started = true
+      ent.transform!(Geom::Transformation.rotation(pivot_origin(ent), pivot_axis(ent), delta.degrees))
+      set_angle(ent, target_deg)
+      @@scrub_model.commit_operation
+      operation_started = false
+      @@scrub_has_change = true
+      @@scrub_model.active_view.refresh
     rescue StandardError
-      @@animation_timer = nil
+      @@scrub_model.abort_operation if @@scrub_model && operation_started
+      clear_scrub
+      raise
+    end
+
+    def self.end_scrub
+      clear_scrub
+    end
+
+    def self.clear_scrub
+      @@scrub_model = nil
+      @@scrub_entity = nil
+      @@scrub_has_change = false
     end
 
     def self.send_pegs(dialog)
@@ -180,14 +295,9 @@ end
     def self.send_state(dialog)
       ent = find_target
       if ent
-        derived = derive_angle_from_transform(ent).to_f rescue 0.0
+        derived = derive_angle_from_transform(ent).to_f
         stored = ent.get_attribute(ATTR_DICT, 'angle_deg', nil)
-        angle = if stored.nil? || (stored.to_f - derived).abs >= 0.5
-                  set_angle(ent, derived)
-                  derived
-                else
-                  stored.to_f
-                end
+        angle = stored.nil? || (stored.to_f - derived).abs >= 0.5 ? derived : stored.to_f
         payload = { angle: angle, speed: get_speed(ent), easing: get_easing(ent) }
       else
         payload = { angle: 0.0, speed: 60.0, easing: 1.0 }
@@ -201,35 +311,64 @@ end
       return unless dialog
       delays.each do |delay|
         UI.start_timer(delay, false) do
-          begin
-            next unless @@dlg == dialog
-            send_pegs(dialog)
-            send_state(dialog)
-          rescue StandardError
-          end
+          next unless @@dlg == dialog
+          send_pegs(dialog)
+          send_state(dialog)
         end
       end
+    end
+
+    def self.close_dialogs
+      end_scrub
+      cancel_animation
+      help_dialog = @@help_dialog
+      main_dialog = @@dlg
+      @@help_dialog = nil
+      @@dlg = nil
+      help_dialog.close if help_dialog
+      main_dialog.close if main_dialog
     end
 
     def self.read_pref(name, default); Sketchup.read_default(PREF_NS, name, default); end
     def self.write_pref(name, value); Sketchup.write_default(PREF_NS, name, value); end
 
     def self.open_dialog
-      html = File.join(File.dirname(__FILE__), 'ui', 'index.html')
+      if @@dlg && @@dlg.visible?
+        @@dlg.bring_to_front
+        return
+      end
+      source_file = __FILE__.dup.force_encoding(Encoding::UTF_8)
+      html = File.join(File.dirname(source_file), 'ui', 'index.html')
       dlg = UI::HtmlDialog.new(
         dialog_title: 'Turntable',
-        style: UI::HtmlDialog::STYLE_DIALOG,
+        # A controller is a tool palette, not a document-owned dialog. On
+        # macOS STYLE_DIALOG can prevent its model window from closing while
+        # the retained HtmlDialog remains open.
+        style: UI::HtmlDialog::STYLE_UTILITY,
         width: read_pref('w', 520).to_i,
         height: read_pref('h', 230).to_i,
         resizable: true,
         preferences_key: 'sam_turntable_v032'
       )
       dlg.set_file(html)
+      dlg.set_on_closed do
+        end_scrub
+        cancel_animation
+        @@dlg = nil if @@dlg == dlg
+      end
       @@dlg = dlg
 
-      dlg.add_action_callback('scrub') do |d, arg|
-        ent = find_target
-        rotate_to(ent, (arg.to_f + 360.0) % 360.0) if ent
+      dlg.add_action_callback('scrub_begin') do |_d, _arg|
+        begin_scrub
+      end
+
+      dlg.add_action_callback('scrub') do |_d, arg|
+        ent = @@scrub_entity || find_target
+        scrub_to((arg.to_f + 360.0) % 360.0) if ent
+      end
+
+      dlg.add_action_callback('scrub_end') do |_d, _arg|
+        end_scrub
       end
 
       dlg.add_action_callback('go') do |d, arg|
@@ -242,12 +381,10 @@ end
           mult  = parts[3].to_f
           anim  = parts[4].to_i == 1
           easing = parts[5].nil? ? get_easing(ent) : parts[5].to_f
-          set_speed(ent, speed)
-          set_easing(ent, easing)
           if anim
             animate_to(ent, t_abs, speed, longf, mult, easing)
           else
-            rotate_to(ent, t_abs)
+            rotate_to(ent, t_abs, 'Move Turntable', { speed: speed, easing: easing })
           end
         end
       end
@@ -259,7 +396,13 @@ end
 
       dlg.add_action_callback('easing_set') do |_d, arg|
         ent = find_target
-        set_easing(ent, arg) if ent
+        if ent
+          end_scrub
+          cancel_animation
+          with_operation(Sketchup.active_model, 'Set Turntable Easing') do
+            set_easing(ent, arg)
+          end
+        end
       end
 
       dlg.add_action_callback('help') { |_d, _arg| open_help }
@@ -276,7 +419,11 @@ end
           if ent
             json = Base64.strict_decode64(arg.to_s)
             arr = JSON.parse(json)
-            ok = set_pegs(ent, arr)
+            end_scrub
+            cancel_animation
+            ok = with_operation(Sketchup.active_model, 'Update Turntable Pegs') do
+              set_pegs(ent, arr)
+            end
             message = ok ? 'Saved in model.' : 'Peg data was not an array.'
           end
         rescue JSON::ParserError, TypeError, ArgumentError => error
@@ -305,10 +452,11 @@ end
         @@help_dialog.bring_to_front
         return
       end
-      help_file = File.join(File.dirname(__FILE__), 'ui', 'help.html')
+      source_file = __FILE__.dup.force_encoding(Encoding::UTF_8)
+      help_file = File.join(File.dirname(source_file), 'ui', 'help.html')
       @@help_dialog = UI::HtmlDialog.new(
         dialog_title: 'Turntable Controller — Quick Guide',
-        style: UI::HtmlDialog::STYLE_DIALOG,
+        style: UI::HtmlDialog::STYLE_UTILITY,
         width: 470,
         height: 590,
         min_width: 380,
@@ -324,10 +472,10 @@ end
 
     class ModelObserver < Sketchup::AppObserver
       def expectsStartupModelNotifications; true; end
-      def onNewModel(_model); Core.refresh_dialog([0.0, 0.25, 0.8]); end
-      def onOpenModel(_model); Core.refresh_dialog([0.0, 0.25, 0.8]); end
-      def onActivateModel(_model); Core.refresh_dialog([0.0, 0.15]); end
-      def onExtensionsLoaded; Core.refresh_dialog([0.2, 0.8]); end
+      def onNewModel(_model); Core.end_scrub; Core.refresh_dialog([0.0, 0.25, 0.8]); end
+      def onOpenModel(_model); Core.end_scrub; Core.refresh_dialog([0.0, 0.25, 0.8]); end
+      def onActivateModel(_model); Core.end_scrub; Core.refresh_dialog([0.0, 0.15]); end
+      def onQuit; Core.close_dialogs; end
     end
 
     unless @observer
